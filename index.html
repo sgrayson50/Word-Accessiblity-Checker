@@ -248,13 +248,17 @@
       "compliance certification. A communication professional " +
       "must manually review and correct the document.";
     report.appendChild(reminder);
+} catch (error) {
+    report.innerHTML = "";
 
-  } catch (error) {
-    report.innerHTML =
-      "<h2>Accessibility Report</h2>" +
-      "<p>The document could not be analyzed. " +
-      "Please check that it is a valid .docx file.</p>";
-  }
+    const heading = document.createElement("h2");
+    heading.textContent = "Accessibility Checker Error";
+    report.appendChild(heading);
+
+    const message = document.createElement("p");
+    message.textContent = error.message;
+    report.appendChild(message);
+}
 }
       const file = document.getElementById("document").files[0];
       const report = document.getElementById("report");
