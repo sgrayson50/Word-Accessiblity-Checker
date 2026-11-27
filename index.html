@@ -70,11 +70,12 @@
     <h2>Accessibility Report</h2>
     <p>Your report will appear here.</p>
   </div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+ <script>
+async function checkDocument() {
+  alert("The button is working!");
 
-  <script>
-    async function checkDocument() {
- alert("The button is working!");
-    const file = document.getElementById("document").files[0];
+  const file = document.getElementById("document").files[0];
   const report = document.getElementById("report");
 
   if (!file) {
@@ -84,13 +85,17 @@
     return;
   }
 
-  report.innerHTML =
-    "<h2>Accessibility Report</h2>" +
-    "<p>Analyzing your document...</p>";
+  if (!file.name.toLowerCase().endsWith(".docx")) {
+    report.innerHTML =
+      "<h2>Accessibility Report</h2>" +
+      "<p>Please select a .docx Word document.</p>";
+    return;
+  }
+
+  report.innerHTML = "<p>Analyzing your document...</p>";
 
   try {
     const zip = await JSZip.loadAsync(file);
-
     const documentFile = zip.file("word/document.xml");
     const stylesFile = zip.file("word/styles.xml");
     const propertiesFile = zip.file("docProps/core.xml");
@@ -99,135 +104,73 @@
       throw new Error("The Word document could not be read.");
     }
 
-    const documentXML = await documentFile.async("text");
     const parser = new DOMParser();
-    const doc = parser.parseFromString(
-      documentXML,
-      "application/xml"
-    );
+    const xml = await documentFile.async("text");
+    const doc = parser.parseFromString(xml, "application/xml");
 
-    const paragraphs = Array.from(
-      doc.getElementsByTagName("w:p")
-    );
-
-    const headings = paragraphs.filter(paragraph => {
-      const style = paragraph.getElementsByTagName("w:pStyle")[0];
-      return style &&
-        /^Heading[1-6]$/i.test(
-          style.getAttribute("w:val") || ""
-        );
+    const paragraphs = Array.from(doc.getElementsByTagName("w:p"));
+    const headings = paragraphs.filter(p => {
+      const style = p.getElementsByTagName("w:pStyle")[0];
+      return style && /^Heading[1-6]$/i.test(style.getAttribute("w:val") || "");
     });
 
-    const images = Array.from(
-      doc.getElementsByTagName("wp:docPr")
-    );
-
-    const imagesWithoutAlt = images.filter(image => {
-      const description = image.getAttribute("descr");
-      return !description || !description.trim();
+    const images = Array.from(doc.getElementsByTagName("wp:docPr"));
+    const missingAlt = images.filter(img => {
+      return !(img.getAttribute("descr") || "").trim();
     });
 
-    const links = Array.from(
-      doc.getElementsByTagName("w:hyperlink")
-    );
-
-    const linksWithoutText = links.filter(link => {
-      return !link.textContent.trim();
-    });
-
+    const links = Array.from(doc.getElementsByTagName("w:hyperlink"));
+    const emptyLinks = links.filter(link => !link.textContent.trim());
     const tables = doc.getElementsByTagName("w:tbl");
 
     let titleFound = false;
     let languageFound = false;
 
     if (propertiesFile) {
-      const propertiesXML = await propertiesFile.async("text");
-      const properties = parser.parseFromString(
-        propertiesXML,
-        "application/xml"
-      );
-
-      const title = properties.getElementsByTagName("dc:title")[0];
-
-      titleFound = title && title.textContent.trim().length > 0;
+      const xml = await propertiesFile.async("text");
+      const props = parser.parseFromString(xml, "application/xml");
+      const title = props.getElementsByTagName("dc:title")[0];
+      titleFound = !!(title && title.textContent.trim());
     }
 
     if (stylesFile) {
-      const stylesXML = await stylesFile.async("text");
-      languageFound = /w:lang[^>]*w:val=["'][^"']+["']/.test(
-        stylesXML
-      );
+      const xml = await stylesFile.async("text");
+      languageFound = /w:lang[^>]*w:val=["'][^"']+["']/.test(xml);
     }
 
     const findings = [];
 
-    if (headings.length === 0) {
-      findings.push(
-        "No heading styles were detected. Review the document structure."
-      );
-    } else {
-      findings.push(
-        headings.length + " heading(s) detected. Review heading order."
-      );
-    }
+    findings.push(headings.length
+      ? headings.length + " heading(s) detected. Review heading order."
+      : "No heading styles detected. Review document structure.");
 
-    if (imagesWithoutAlt.length > 0) {
-      findings.push(
-        imagesWithoutAlt.length +
-        " image(s) may be missing alternative text."
-      );
-    } else if (images.length > 0) {
-      findings.push(
-        "Alternative text descriptions were detected for the images."
-      );
-    } else {
-      findings.push(
-        "No images were detected in the document."
-      );
-    }
+    findings.push(missingAlt.length
+      ? missingAlt.length + " image(s) may be missing alternative text."
+      : images.length
+        ? "Alternative text descriptions were detected for images."
+        : "No images were detected.");
 
-    if (linksWithoutText.length > 0) {
-      findings.push(
-        linksWithoutText.length +
-        " hyperlink(s) may have missing text."
-      );
-    } else {
-      findings.push(
-        "No empty hyperlinks were detected."
-      );
-    }
+    findings.push(emptyLinks.length
+      ? emptyLinks.length + " hyperlink(s) may be missing text."
+      : "No empty hyperlinks were detected.");
 
-    if (tables.length > 0) {
-      findings.push(
-        tables.length +
-        " table(s) detected. Manually review table headers and structure."
-      );
-    } else {
-      findings.push("No tables were detected.");
-    }
+    findings.push(tables.length
+      ? tables.length + " table(s) detected. Manually review table headers and structure."
+      : "No tables were detected.");
 
-    if (!titleFound) {
-      findings.push(
-        "Document title metadata may be missing."
-      );
-    } else {
-      findings.push("Document title metadata was detected.");
-    }
+    findings.push(titleFound
+      ? "Document title metadata was detected."
+      : "Document title metadata may be missing.");
 
-    if (!languageFound) {
-      findings.push(
-        "Document language metadata may be missing."
-      );
-    } else {
-      findings.push("Document language metadata was detected.");
-    }
+    findings.push(languageFound
+      ? "Document language metadata was detected."
+      : "Document language metadata may be missing.");
 
-    report.innerHTML =
-      "<h2>Accessibility Report</h2>";
+    report.innerHTML = "<h2>Accessibility Report</h2>";
 
-    const fileName = document.createElement("p");
-    fileName.textContent = "Document: " + file.name;
-    report.appendChild(fileName);
+    const name = document.createElement("p");
+    name.textContent = "Document: " + file.name;
+    report.appendChild(name);
 
     const heading = document.createElement("h3");
     heading.textContent = "Issues and items to review";
@@ -245,50 +188,17 @@
 
     const reminder = document.createElement("p");
     reminder.textContent =
-      "This is a preliminary automated review, not a WCAG " +
-      "compliance certification. A communication professional " +
-      "must manually review and correct the document.";
+      "This is a preliminary automated review, not a WCAG compliance certification. A communication professional must manually review and correct the document.";
     report.appendChild(reminder);
-} catch (error) {
-    report.innerHTML = "";
 
-    const heading = document.createElement("h2");
-    heading.textContent = "Accessibility Checker Error";
-    report.appendChild(heading);
-
+  } catch (error) {
+    report.innerHTML = "<h2>Accessibility Checker Error</h2>";
     const message = document.createElement("p");
     message.textContent = error.message;
     report.appendChild(message);
+  }
 }
-}
-      const file = document.getElementById("document").files[0];
-      const report = document.getElementById("report");
-
-      if (!file) {
-        report.innerHTML =
-          "<h2>Accessibility Report</h2>" +
-          "<p class='issue'>Please select a Word document first.</p>";
-        return;
-      }
-
-      if (!file.name.toLowerCase().endsWith(".docx")) {
-        report.innerHTML =
-          "<h2>Accessibility Report</h2>" +
-          "<p class='issue'>Please select a .docx Word document.</p>";
-        return;
-      }
-
-      report.innerHTML =
-        "<h2>Accessibility Report</h2>" +
-        "<p><strong>Document:</strong> " + file.name + "</p>" +
-        "<p class='pass'>Your document was selected successfully.</p>" +
-        "<p>Full accessibility checks will be added in the next step.</p>" +
-        "<p><strong>Remember:</strong> A communication professional " +
-        "must review and correct accessibility issues manually.</p>";
-    }
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script>
-  </script>
+</script>
 
 </body>
 </html>
